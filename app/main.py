@@ -75,6 +75,12 @@ async def generate_briefing(req: NavigatorRequest):
     return {"briefing": briefing, "articles": articles, "topic": req.topic}
 
 
+@app.get("/api/keepalive")
+def keepalive():
+    """Endpoint to keep free hosting tiers awake so APScheduler runs."""
+    return {"status": "awake"}
+
+
 @app.post("/api/ask")
 def ask_question(req: AskRequest):
     """Answer a follow-up question using RAG context."""
