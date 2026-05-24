@@ -1,86 +1,74 @@
-import chromadb
-from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
+from app.db.supabase_client import supabase
 
-# Initialize an in-memory Chroma client (wipes when server restarts)
-# For production, you'd use chromadb.PersistentClient(path="./data/embeddings")
-chroma_client = chromadb.Client()
+# Load the embedding model once at module level
+_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Use a lightweight, fast local embedding model
-sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
-)
 
-def create_knowledge_base(topic: str, chunks: list[dict]) -> chromadb.Collection:
+def create_knowledge_base(topic: str, chunks: list[dict]) -> None:
     """
-    Creates a new vector collection for the specific topic and adds the text chunks.
+    Generates embeddings for the given text chunks and upserts them
+    into the Supabase `article_embeddings` table.
     """
-    # Clean topic string to make a valid collection name (no spaces)
-    collection_name = get_safe_collection_name(topic)
-    
-    # Get or create the collection
-    collection = chroma_client.get_or_create_collection(
-        name=collection_name,
-        embedding_function=sentence_transformer_ef
-    )
-    
-    # Extract lists for ChromaDB
-    ids = [chunk["id"] for chunk in chunks]
-    documents = [chunk["text"] for chunk in chunks]
-    metadatas = [chunk["metadata"] for chunk in chunks]
-    
-    # Upsert data into the topological space
-    collection.upsert(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas
-    )
-    
-    return collection
+    topic_lower = topic.strip().lower()
 
-def retrieve_relevant_context(topic: str, query: str, top_k: int = 3) -> str:
+    # 1. Delete any existing embeddings for this topic to avoid duplicates
+    supabase.table("article_embeddings").delete().eq("topic", topic_lower).execute()
+
+    # 2. Prepare the texts for batch embedding
+    texts = [chunk["text"] for chunk in chunks]
+    embeddings = _model.encode(texts).tolist()
+
+    # 3. Build rows for insertion
+    rows = []
+    for chunk, embedding in zip(chunks, embeddings):
+        rows.append({
+            "topic": topic_lower,
+            "content": chunk["text"],
+            "source_title": chunk["metadata"].get("source_title", ""),
+            "source_link": chunk["metadata"].get("source_link", ""),
+            "pub_date": chunk["metadata"].get("pub_date", ""),
+            "embedding": embedding,
+        })
+
+    # 4. Insert in batches of 50 to avoid payload limits
+    batch_size = 50
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        supabase.table("article_embeddings").insert(batch).execute()
+
+    print(f"[OK] Stored {len(rows)} chunks for topic '{topic_lower}' in Supabase.")
+
+
+def retrieve_relevant_context(topic: str, query: str, top_k: int = 4) -> str:
     """
-    Embeds the user query, finds the nearest neighbors in the vector space,
-    and returns a formatted string of the most relevant chunks.
+    Embeds the user query and calls the Supabase RPC function `match_documents`
+    to find the most semantically similar article chunks.
     """
-    collection_name = get_safe_collection_name(topic)
-    
+    topic_lower = topic.strip().lower()
+
+    # 1. Embed the query
+    query_embedding = _model.encode(query).tolist()
+
+    # 2. Call the Supabase RPC function
     try:
-        collection = chroma_client.get_collection(
-            name=collection_name,
-            embedding_function=sentence_transformer_ef
-        )
-    except ValueError:
+        result = supabase.rpc("match_documents", {
+            "query_embedding": query_embedding,
+            "match_topic": topic_lower,
+            "match_threshold": 0.3,
+            "match_count": top_k,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ Supabase RPC error: {e}")
         return "No knowledge base found for this topic."
 
-    # Query the vector space
-    results = collection.query(
-        query_texts=[query],
-        n_results=top_k
-    )
-    
-    # Format the results into a single context string for the LLM
+    # 3. Format the results for the LLM
+    if not result.data:
+        return "No relevant context found for this query in the knowledge base."
+
     context_blocks = []
-    if results['documents'] and len(results['documents'][0]) > 0:
-        for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-            block = f"Source: {meta['source_title']}\nSnippet: {doc}"
-            context_blocks.append(block)
-            
+    for row in result.data:
+        block = f"Source: {row['source_title']}\nSnippet: {row['content']}"
+        context_blocks.append(block)
+
     return "\n\n---\n\n".join(context_blocks)
-
-import re
-
-def get_safe_collection_name(topic: str) -> str:
-    """Generates a ChromaDB-safe collection name."""
-    # Replace any non-alphanumeric character with an underscore
-    safe_name = re.sub(r'[^a-zA-Z0-9]+', '_', topic)
-    # Strip leading/trailing underscores and convert to lowercase
-    safe_name = safe_name.strip('_').lower()
-    
-    # ChromaDB requires names to be between 3 and 63 characters
-    if len(safe_name) < 3:
-        safe_name = safe_name.ljust(3, 'a') # Pad with 'a' if too short
-    
-    return safe_name[:63] # Truncate if too long
-
-# Then, in your functions, replace the old collection_name logic with:
-# collection_name = get_safe_collection_name(topic)

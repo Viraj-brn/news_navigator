@@ -1,11 +1,12 @@
 from dotenv import load_dotenv
-from groq import Groq
-import os
 
-from app.llm.llm_serve import get_client
+from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+from app.llm.llm_serve import get_langchain_client
 from app.rag.vector_store import retrieve_relevant_context
 
-client = get_client()
 load_dotenv()
 
 def ask_briefing(
@@ -15,31 +16,40 @@ def ask_briefing(
     new_question: str,
 ) -> str:
     
-    # 1. Retrieve ONLY the mathematically closest text chunks to the question
-    relevant_context = retrieve_relevant_context(topic=topic, query=new_question, top_k=4)
+    client = get_langchain_client()
 
-    system = f"""You are an AI intelligence assistant for Economic Times.
-Your job is to answer the user's follow-up question based ONLY on the specific article snippets provided below.
+    # Define the tool, capturing `topic` in the closure
+    @tool
+    def search_knowledge_base(query: str) -> str:
+        """Search the detailed articles underlying this briefing for specific facts and context."""
+        return retrieve_relevant_context(topic=topic, query=query, top_k=4)
+        
+    system_prompt = f"""You are an AI intelligence assistant for Economic Times.
+Your job is to answer the user's follow-up questions about the topic: '{topic}'.
 
-RELEVANT SNIPPETS:
-{relevant_context}
+You have access to a tool called `search_knowledge_base`. Use it to find specific details from the articles if you don't already know the answer from the conversation history.
+- Always rely on the tool to verify facts.
+- If the tool doesn't return relevant information, state that you don't have enough information in the current briefing.
+- Keep the answer analytical, brief, and to the point.
+"""
 
-Rules:
-- Answer accurately based ONLY on the snippets.
-- If the snippets do not contain the answer, explicitly state: "I don't have enough information in the current briefing sources to answer that."
-- Cite your sources by mentioning the publication name or article title provided in the snippet.
-- Keep the answer analytical, brief, and to the point."""
-
-    messages = conversation_history + [{"role": "user", "content": new_question}]
-
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": system},
-            *messages
-        ],
-        max_tokens=600,
-        temperature=0.2 # Low temperature for accurate retrieval synthesis
-    )
-
-    return response.choices[0].message.content
+    # Build the LangGraph ReAct agent
+    agent = create_react_agent(client, tools=[search_knowledge_base])
+    
+    # Convert conversation history
+    messages = [SystemMessage(content=system_prompt)]
+    for msg in conversation_history:
+        if msg["role"] == "user":
+            messages.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            messages.append(AIMessage(content=msg["content"]))
+            
+    # Add new question
+    messages.append(HumanMessage(content=new_question))
+    
+    # Invoke the agent
+    response = agent.invoke({"messages": messages})
+    
+    # The final message from the agent is the last message in the state
+    final_message = response["messages"][-1].content
+    return final_message

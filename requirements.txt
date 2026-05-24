@@ -4,6 +4,10 @@ feedparser
 httpx
 groq
 python-dotenv
-chromadb 
+supabase
 langchain-text-splitters 
 sentence-transformers
+langgraph
+langchain-groq
+langchain-core
+apscheduler

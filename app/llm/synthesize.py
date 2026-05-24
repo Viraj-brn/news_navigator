@@ -1,21 +1,19 @@
 import json
+from typing import TypedDict, Optional
 from dotenv import load_dotenv
-from groq import Groq
-import os
 
-from app.llm.llm_serve import get_client
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-client = get_client()
+from app.llm.llm_serve import get_langchain_client
 
 load_dotenv()
-
 
 DEPTH_INSTRUCTIONS = {
     "quick":    "Write 2–3 sentences per section. Be concise and punchy.",
     "standard": "Write 1–2 paragraphs per section. Be analytical and clear.",
     "expert":   "Write detailed paragraphs with data, policy references, and expert framing. Assume the reader is a finance professional.",
 }
-
 
 def build_article_block(articles: list[dict]) -> str:
     lines = []
@@ -25,79 +23,151 @@ def build_article_block(articles: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def synthesize_briefing(articles: list[dict], topic: str, depth: str = "standard") -> dict:
+# 1. Define the Graph State
+class BriefingState(TypedDict):
+    topic: str
+    depth_instruction: str
+    article_block: str
+    article_count: int
+    draft: Optional[str]
+    error: Optional[str]
+    final_briefing: Optional[dict]
+    retry_count: int
 
-    article_block = build_article_block(articles)
-    depth_instruction = DEPTH_INSTRUCTIONS.get(
-        depth, DEPTH_INSTRUCTIONS["standard"])
 
+# 2. Node: Draft Briefing
+def draft_node(state: BriefingState):
+    client = get_langchain_client()
+    
     system_prompt = (
         "You are an intelligence briefing engine for Economic Times. "
         "You synthesize multiple news articles into a single structured, analytical briefing. "
         "Your output must be STRICTLY valid JSON. Do not include markdown, backticks, explanations, or any text outside the JSON object."
     )
 
-    user_prompt = f"""Topic: {topic}
-Depth: {depth_instruction}
+    user_prompt = f"""Topic: {state['topic']}
+Depth: {state['depth_instruction']}
 
-Here are {len(articles)} recent ET articles on this topic:
+Here are {state['article_count']} recent ET articles on this topic:
 
-{article_block}
+{state['article_block']}
 
 Produce a structured briefing as a JSON object. 
 CRITICAL RULES:
 1. Do NOT use a rigid template for the sections. You must invent 4 to 5 highly relevant analytical sections with DYNAMIC titles based entirely on the topic.
-2. If it's Finance: use titles like 'Market Impact', 'Regulatory View', etc.
-3. If it's Sports: use titles like 'Match Highlights', 'Key Performances', 'Tournament Impact', etc.
-4. If it's Entertainment/Tech: use context-appropriate headers.
-
-Structure your output EXACTLY like this JSON format:
+2. Structure your output EXACTLY like this JSON format:
 {{
   "headline": "A sharp, analytical headline for this briefing",
   "kicker": "3–5 word topic label (e.g., 'IPL 2026 · Cricket')",
   "synthesis": "1 paragraph overview of what is happening",
   "metadata": [
-    {{ "label": "Key Stat", "value": "Number/Data (e.g., 'Target: 240' or 'Valuation: $5B')" }},
-    {{ "label": "Date/Impact", "value": "Short text" }}
+    {{ "label": "Key Stat", "value": "Number/Data" }}
   ],
   "sections": [
     {{
-      "title": "DYNAMIC TITLE 1 (e.g., 'The Opening Ceremony')",
+      "title": "DYNAMIC TITLE 1",
       "icon": "🏏", 
-      "body": "Detailed paragraph synthesizing the information..."
-    }},
-    {{
-      "title": "DYNAMIC TITLE 2 (e.g., 'Key Players to Watch')",
-      "icon": "⭐",
       "body": "Detailed paragraph..."
     }}
-    // Add 2-3 more DYNAMIC sections here...
   ],
   "keyTerms": [
-    {{ "term": "Term", "definition": "Definition for lay readers" }}
+    {{ "term": "Term", "definition": "Definition" }}
   ],
-  "articleCount": {len(articles)}
+  "articleCount": {state['article_count']}
 }}
 
 Output strictly valid JSON. No markdown formatting, no explanations."""
 
-    response = client.chat.completions.create(
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    # If there was an error in a previous attempt, pass it along
+    if state.get("error") and state.get("draft"):
+        messages.append(AIMessage(content=state["draft"]))
+        messages.append(HumanMessage(content=f"Your previous output was invalid. Error: {state['error']}. Please fix the JSON and try again. Provide strictly valid JSON."))
 
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        max_tokens=3000,
-        temperature=0.2  # lower = better JSON reliability
-    )
+    response = client.invoke(messages)
+    return {"draft": response.content, "retry_count": state.get("retry_count", 0) + 1}
 
-    raw = response.choices[0].message.content.strip()
 
+# 3. Node: Validate JSON
+def validate_node(state: BriefingState):
+    raw = state.get("draft", "").strip()
+    
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # Strip accidental markdown fences if Claude added them
-        cleaned = raw.removeprefix("```json").removeprefix(
-            "```").removesuffix("```").strip()
-        return json.loads(cleaned)
+        # Strip accidental markdown
+        cleaned = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        parsed = json.loads(cleaned)
+        
+        # Check required keys
+        required_keys = ["headline", "kicker", "synthesis", "sections"]
+        for key in required_keys:
+            if key not in parsed:
+                raise ValueError(f"Missing required key: {key}")
+                
+        return {"final_briefing": parsed, "error": None}
+        
+    except Exception as e:
+        return {"error": str(e), "final_briefing": None}
+
+
+# 4. Conditional Edge: Decide next step
+def should_continue(state: BriefingState):
+    if state.get("final_briefing") is not None:
+        return "end"
+    if state.get("retry_count", 0) >= 3:
+        # Fallback if we fail 3 times
+        return "end"
+    return "draft"
+
+
+# 5. Build the Graph
+workflow = StateGraph(BriefingState)
+workflow.add_node("draft_briefing", draft_node)
+workflow.add_node("validate_json", validate_node)
+
+workflow.set_entry_point("draft_briefing")
+workflow.add_edge("draft_briefing", "validate_json")
+workflow.add_conditional_edges(
+    "validate_json",
+    should_continue,
+    {
+        "end": END,
+        "draft": "draft_briefing"
+    }
+)
+briefing_app = workflow.compile()
+
+
+def synthesize_briefing(articles: list[dict], topic: str, depth: str = "standard") -> dict:
+    article_block = build_article_block(articles)
+    depth_instruction = DEPTH_INSTRUCTIONS.get(depth, DEPTH_INSTRUCTIONS["standard"])
+    
+    initial_state = {
+        "topic": topic,
+        "depth_instruction": depth_instruction,
+        "article_block": article_block,
+        "article_count": len(articles),
+        "draft": None,
+        "error": None,
+        "final_briefing": None,
+        "retry_count": 0
+    }
+    
+    result = briefing_app.invoke(initial_state)
+    
+    if result.get("final_briefing"):
+        return result["final_briefing"]
+    
+    # Fallback if completely failed
+    return {
+        "headline": "Failed to generate briefing",
+        "kicker": "Error",
+        "synthesis": "The AI failed to generate a valid response after multiple attempts.",
+        "metadata": [],
+        "sections": [],
+        "keyTerms": [],
+        "articleCount": len(articles)
+    }
