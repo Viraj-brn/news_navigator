@@ -14,6 +14,7 @@ def _run_sentinel_check():
     4. Print an alert to the terminal if triggered.
     """
     print("\n[Sentinel] Running scheduled alert check...")
+    results_summary = []
 
     # 1. Fetch active alerts
     try:
@@ -21,11 +22,11 @@ def _run_sentinel_check():
         alerts = result.data
     except Exception as e:
         print(f"[Sentinel] Failed to fetch alerts: {e}")
-        return
+        return {"status": "error", "message": str(e)}
 
     if not alerts:
         print("[Sentinel] No active alerts found. Skipping.")
-        return
+        return {"status": "skipped", "message": "No active alerts"}
 
     print(f"[Sentinel] Found {len(alerts)} active alert(s). Evaluating...")
 
@@ -35,12 +36,22 @@ def _run_sentinel_check():
         trigger_condition = alert["trigger_condition"]
 
         try:
-            # Use asyncio to run the async fetch function from sync context
-            articles = asyncio.run(fetch_articles_for_topic(keyword))
-        except RuntimeError:
-            # If there's already an event loop running (inside FastAPI/uvicorn)
-            loop = asyncio.get_event_loop()
-            articles = loop.run_until_complete(fetch_articles_for_topic(keyword))
+            # Check if there is an existing event loop
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                # We are inside an async context (FastAPI endpoint)
+                import nest_asyncio
+                nest_asyncio.apply()
+                articles = asyncio.run(fetch_articles_for_topic(keyword))
+            else:
+                articles = asyncio.run(fetch_articles_for_topic(keyword))
+        except Exception as e:
+            print(f"[Sentinel] Error fetching articles for '{keyword}': {e}")
+            continue
 
         if not articles:
             print(f"[Sentinel] No articles found for keyword '{keyword}'. Skipping.")
@@ -49,35 +60,25 @@ def _run_sentinel_check():
         # 3. Evaluate with LLM
         verdict = evaluate_headlines(trigger_condition, articles)
 
-        # 4. Print alert if triggered
+        # 4. Record results
         if verdict.get("triggered"):
+            summary = {
+                "keyword": keyword,
+                "triggered": True,
+                "match": verdict.get('article_title', 'N/A'),
+                "details": verdict.get('summary', 'N/A')
+            }
+            results_summary.append(summary)
             print(f"\n{'='*60}")
-            print(f"  [ALERT TRIGGERED]")
-            print(f"  Keyword:   {keyword}")
-            print(f"  Condition: {trigger_condition}")
-            print(f"  Match:     {verdict.get('article_title', 'N/A')}")
-            print(f"  Summary:   {verdict.get('summary', 'N/A')}")
+            print(f"  [ALERT TRIGGERED] {keyword}")
+            print(f"  Match: {summary['match']}")
             print(f"{'='*60}\n")
         else:
-            print(f"[Sentinel] No match for alert '{keyword}' -> '{trigger_condition}'.")
+            results_summary.append({
+                "keyword": keyword,
+                "triggered": False
+            })
+            print(f"[Sentinel] No match for alert '{keyword}'.")
 
     print("[Sentinel] Check complete.\n")
-
-
-# --- Scheduler setup ---
-scheduler = BackgroundScheduler()
-scheduler.add_job(_run_sentinel_check, "interval", hours=6, id="news_sentinel")
-
-
-def start_scheduler():
-    """Start the APScheduler background scheduler."""
-    if not scheduler.running:
-        scheduler.start()
-        print("[Sentinel] Scheduler started. Checking every 6 hours.")
-
-
-def stop_scheduler():
-    """Gracefully shut down the scheduler."""
-    if scheduler.running:
-        scheduler.shutdown(wait=False)
-        print("[Sentinel] Scheduler stopped.")
+    return {"status": "success", "results": results_summary}

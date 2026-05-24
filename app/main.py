@@ -10,7 +10,7 @@ from app.llm.synthesize import synthesize_briefing
 from app.llm.ask_briefing import ask_briefing
 from app.rag.document_processor import process_articles_into_chunks
 from app.rag.vector_store import create_knowledge_base
-from app.core.scheduler import start_scheduler, stop_scheduler
+from app.core.scheduler import _run_sentinel_check
 from app.db.supabase_client import supabase
 import os
 
@@ -19,17 +19,7 @@ load_dotenv()
 if not os.getenv("GROQ_API_KEY"):
     raise RuntimeError("GROQ_API_KEY not found in environment variables")
 
-
-# ── App Lifecycle ────────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Start the News Sentinel scheduler on startup, stop on shutdown."""
-    start_scheduler()
-    yield
-    stop_scheduler()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 
 # ── Request models ──────────────────────────────────────
@@ -130,6 +120,15 @@ def delete_alert(alert_id: str):
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete alert: {str(e)}")
+
+@app.post("/api/sentinel/run")
+def trigger_sentinel():
+    """Endpoint for cron-job.org to trigger the daily news alert check."""
+    try:
+        results = _run_sentinel_check()
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sentinel run failed: {str(e)}")
 
 
 # ── Serve the frontend ───────────────────────────────────

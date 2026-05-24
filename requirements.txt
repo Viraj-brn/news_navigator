@@ -10,4 +10,4 @@ sentence-transformers
 langgraph
 langchain-groq
 langchain-core
-apscheduler
+nest-asyncio
