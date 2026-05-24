@@ -1,5 +1,4 @@
 import asyncio
-from apscheduler.schedulers.background import BackgroundScheduler
 from app.db.supabase_client import supabase
 from app.core.fetch_articles import fetch_articles_for_topic
 from app.llm.evaluator import evaluate_headlines
