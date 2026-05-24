@@ -1,8 +1,8 @@
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 from app.db.supabase_client import supabase
 
-# Load the embedding model once at module level
-_model = SentenceTransformer("all-MiniLM-L6-v2")
+# Load the lightweight ONNX embedding model (uses <100MB RAM instead of 500MB+ for PyTorch)
+_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 
 def create_knowledge_base(topic: str, chunks: list[dict]) -> None:
@@ -17,7 +17,9 @@ def create_knowledge_base(topic: str, chunks: list[dict]) -> None:
 
     # 2. Prepare the texts for batch embedding
     texts = [chunk["text"] for chunk in chunks]
-    embeddings = _model.encode(texts).tolist()
+    
+    # fastembed returns a generator of numpy arrays. Convert them to lists for JSON serialization.
+    embeddings = [e.tolist() for e in _model.embed(texts)]
 
     # 3. Build rows for insertion
     rows = []
@@ -47,8 +49,8 @@ def retrieve_relevant_context(topic: str, query: str, top_k: int = 4) -> str:
     """
     topic_lower = topic.strip().lower()
 
-    # 1. Embed the query
-    query_embedding = _model.encode(query).tolist()
+    # 1. Embed the query (returns generator of 1 element)
+    query_embedding = list(_model.embed([query]))[0].tolist()
 
     # 2. Call the Supabase RPC function
     try:
