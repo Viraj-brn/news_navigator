@@ -1,12 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- State ---
+    // ── State ───────────────────────────────────────────
     let currentTopic = '';
     let currentDepth = 'standard';
     let currentBriefing = null;
     let conversationHistory = [];
 
-    // --- Elements ---
+    // ── Elements ────────────────────────────────────────
     const searchSection = document.getElementById('search-section');
     const dashboardSection = document.getElementById('dashboard-section');
     const topicInput = document.getElementById('topic-input');
@@ -30,18 +30,59 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input');
     const chatSendBtn = document.getElementById('chat-send-btn');
 
-    // --- Loading Texts ---
+    // Theme
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+
+    // ── Theme Toggle ────────────────────────────────────
+    const savedTheme = localStorage.getItem('fait-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('fait-theme', next);
+        updateThemeIcon(next);
+    });
+
+    function updateThemeIcon(theme) {
+        if (theme === 'dark') {
+            themeIcon.className = 'fa-solid fa-moon';
+        } else {
+            themeIcon.className = 'fa-solid fa-sun';
+        }
+    }
+
+    // ── Toast Notifications ─────────────────────────────
+    const toastContainer = document.getElementById('toast-container');
+
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        const icons = { error: 'fa-circle-exclamation', success: 'fa-circle-check', info: 'fa-circle-info' };
+        toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i> <span>${message}</span>`;
+        toastContainer.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'toastOut 0.4s ease-in forwards';
+            setTimeout(() => toast.remove(), 400);
+        }, 4000);
+    }
+
+    // ── Loading Texts ───────────────────────────────────
     const loadingTexts = [
-        "Scanning top ET sources...",
-        "Analyzing market data...",
-        "Identifying key themes...",
+        "Scanning global finance feeds...",
+        "Pulling AI & tech sources...",
+        "Identifying key market signals...",
         "Synthesizing intelligence...",
-        "Formatting briefing document...",
-        "Finalizing JSON structure..."
+        "Building analytical briefing...",
+        "Formatting structured report...",
     ];
     let loadingInterval = null;
 
-    // --- Events ---
+    // ── Events ──────────────────────────────────────────
 
     // Depth Selector
     depthBtns.forEach(btn => {
@@ -61,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // UI Updates
         generateBtn.style.display = 'none';
-        
+
         // Rebuild Loading State
         loadingState.innerHTML = `
             <div class="spinner-container">
@@ -71,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <p id="loading-text">Initializing parameters...</p>
         `;
         loadingState.style.display = 'flex';
-        
+
         const loadingTextEl = document.getElementById('loading-text');
         let textIdx = 0;
         loadingInterval = setInterval(() => {
@@ -87,16 +128,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-            
+
             if (response.ok) {
                 renderBriefing(data);
                 showDashboard();
+                showToast(`Briefing generated — ${data.articles?.length || 0} sources analyzed`, 'success');
             } else {
-                alert(data.detail || 'An error occurred.');
+                showToast(data.detail || 'No articles found for this topic.', 'error');
             }
         } catch (error) {
             console.error(error);
-            alert('Failed to generate briefing. Please ensure the backend is running.');
+            showToast('Failed to generate briefing. Please ensure the backend is running.', 'error');
         } finally {
             clearInterval(loadingInterval);
             generateBtn.style.display = 'flex';
@@ -119,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationHistory = [];
         chatHistory.innerHTML = `
             <div class="chat-msg ai-msg">
-                Hello! I generated this briefing. What would you like to know more about?
+                Briefing ready. Ask me anything about the analysis, data, or sources.
             </div>
         `;
     });
@@ -130,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!question || !currentBriefing) return;
 
         // Add user msg to UI
-        addChatMessage(question, 'user-msg');
+        addChatMessage(escapeHtml(question), 'user-msg');
         chatInput.value = '';
 
         // Add typing indicator
@@ -157,13 +199,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-            
+
             // Remove loading indicator
-            document.getElementById(loadingId).remove();
+            const loadingEl = document.getElementById(loadingId);
+            if (loadingEl) loadingEl.remove();
 
             if (response.ok) {
-                // Typewriter effect for AI answer
-                typeWriterEffect(data.answer, 'ai-msg');
+                // Render markdown and typewriter
+                typeWriterEffect(renderMarkdown(data.answer), 'ai-msg');
                 conversationHistory.push({ role: "user", content: question });
                 conversationHistory.push({ role: "assistant", content: data.answer });
             } else {
@@ -171,7 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error(error);
-            document.getElementById(loadingId).remove();
+            const loadingEl = document.getElementById(loadingId);
+            if (loadingEl) loadingEl.remove();
             addChatMessage("Network error while asking question.", 'ai-msg');
         }
     };
@@ -181,15 +225,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') askQuestion();
     });
 
-    // --- Helpers ---
+    // ── Helpers ──────────────────────────────────────────
 
     function showDashboard() {
         searchSection.style.display = 'none';
         dashboardSection.style.display = 'block';
-        
+
         // Trigger reflow to restart animations
         void dashboardSection.offsetWidth;
         dashboardSection.classList.add('show');
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function renderMarkdown(text) {
+        if (!text) return '';
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+            .replace(/\n/g, '<br>');
     }
 
     function renderBriefing(data) {
@@ -210,8 +271,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.style.animation = `popIn 0.5s forwards ${i * 0.1}s`;
                 badge.style.opacity = '0';
                 badge.innerHTML = `
-                    <span class="meta-label">${meta.label}</span>
-                    <span class="meta-val">${meta.value}</span>
+                    <span class="meta-label">${escapeHtml(meta.label)}</span>
+                    <span class="meta-val">${escapeHtml(meta.value)}</span>
                 `;
                 bMetadata.appendChild(badge);
             });
@@ -227,10 +288,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 secEl.style.animation = `slideUpFade 0.6s forwards ${0.3 + (i * 0.15)}s`;
                 secEl.style.opacity = '0';
                 secEl.style.transform = 'translateY(20px)';
-                
+
                 secEl.innerHTML = `
-                    <h3 class="section-title"><span>${sec.icon || '📌'}</span> ${sec.title}</h3>
-                    <div class="section-body">${sec.body}</div>
+                    <h3 class="section-title"><span>${sec.icon || '📊'}</span> ${escapeHtml(sec.title)}</h3>
+                    <div class="section-body">${escapeHtml(sec.body)}</div>
                 `;
                 bSections.appendChild(secEl);
             });
@@ -244,8 +305,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tEl = document.createElement('div');
                 tEl.className = 'term-item';
                 tEl.innerHTML = `
-                    <span class="term-name">${term.term}</span>
-                    <span class="term-def">${term.definition}</span>
+                    <span class="term-name">${escapeHtml(term.term)}</span>
+                    <span class="term-def">${escapeHtml(term.definition)}</span>
                 `;
                 bTermsGrid.appendChild(tEl);
             });
@@ -262,10 +323,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.style.animationDelay = `${0.5 + (i * 0.05)}s`;
                 li.style.animation = `popIn 0.4s forwards ${0.5 + (i * 0.05)}s`;
                 li.style.opacity = '0';
-                
+
                 li.innerHTML = `
-                    <a href="${art.link}" target="_blank">${art.title}</a>
-                    <div class="article-desc">${art.pubDate || 'Recent'} • ${art.source || 'News'}</div>
+                    <a href="${escapeHtml(art.link)}" target="_blank">${escapeHtml(art.title)}</a>
+                    <div class="article-desc">${escapeHtml(art.pubDate || 'Recent')} • ${escapeHtml(art.source || 'News')}</div>
                 `;
                 bArticlesList.appendChild(li);
             });
@@ -275,26 +336,33 @@ document.addEventListener('DOMContentLoaded', () => {
     function addChatMessage(text, className, id = '') {
         const msg = document.createElement('div');
         msg.className = `chat-msg ${className}`;
-        msg.innerHTML = text; // allow HTML for loading spinner
+        msg.innerHTML = text;
         if (id) msg.id = id;
         chatHistory.appendChild(msg);
         chatHistory.scrollTop = chatHistory.scrollHeight;
         return msg;
     }
-    
-    function typeWriterEffect(text, className) {
+
+    function typeWriterEffect(html, className) {
         const msgEl = document.createElement('div');
         msgEl.className = `chat-msg ${className}`;
-        msgEl.style.minHeight = "40px"; // prevent jumping
+        msgEl.style.minHeight = "36px";
         chatHistory.appendChild(msgEl);
-        
+
+        // For HTML content, we insert it directly (it's already rendered markdown)
+        let plainText = html.replace(/<[^>]+>/g, '');
         let i = 0;
-        // Simple fast typing effect
-        const speed = 10; 
-        
+        const speed = 8;
+
         function type() {
-            if (i < text.length) {
-                msgEl.innerHTML += text.charAt(i);
+            if (i < plainText.length) {
+                // Once we've typed enough, just dump the full HTML
+                if (i > 30 || i >= plainText.length - 1) {
+                    msgEl.innerHTML = html;
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                    return;
+                }
+                msgEl.textContent += plainText.charAt(i);
                 i++;
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 setTimeout(type, speed);
@@ -304,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // ── News Sentinel ───────────────────────────────
+    // ── F.A.I.T Sentinel ────────────────────────────────
 
     const sentinelToggle = document.getElementById('sentinel-toggle');
     const sentinelBody = document.getElementById('sentinel-body');
@@ -326,7 +394,10 @@ document.addEventListener('DOMContentLoaded', () => {
     sentinelAddBtn.addEventListener('click', async () => {
         const keyword = alertKeywordInput.value.trim();
         const condition = alertConditionInput.value.trim();
-        if (!keyword || !condition) return;
+        if (!keyword || !condition) {
+            showToast('Please fill in both keyword and trigger condition.', 'error');
+            return;
+        }
 
         sentinelAddBtn.disabled = true;
         sentinelAddBtn.textContent = 'Creating...';
@@ -342,13 +413,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 alertKeywordInput.value = '';
                 alertConditionInput.value = '';
                 loadAlerts();
+                showToast(`Alert created for "${keyword}"`, 'success');
             } else {
                 const data = await response.json();
-                alert(data.detail || 'Failed to create alert.');
+                showToast(data.detail || 'Failed to create alert.', 'error');
             }
         } catch (e) {
             console.error(e);
-            alert('Network error creating alert.');
+            showToast('Network error creating alert.', 'error');
         } finally {
             sentinelAddBtn.disabled = false;
             sentinelAddBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Create Alert';
@@ -375,8 +447,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.innerHTML = `
                     <div class="alert-icon"><i class="fa-solid fa-bell"></i></div>
                     <div class="alert-info">
-                        <div class="alert-keyword">${alert.keyword}</div>
-                        <div class="alert-condition">${alert.trigger_condition}</div>
+                        <div class="alert-keyword">${escapeHtml(alert.keyword)}</div>
+                        <div class="alert-condition">${escapeHtml(alert.trigger_condition)}</div>
                     </div>
                     <button class="alert-delete-btn" data-id="${alert.id}" title="Delete alert">
                         <i class="fa-solid fa-trash-can"></i>
@@ -392,6 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
                         loadAlerts();
+                        showToast('Alert deleted.', 'info');
                     } catch (err) {
                         console.error(err);
                     }

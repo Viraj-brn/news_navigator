@@ -1,6 +1,7 @@
 import json
 from dotenv import load_dotenv
-from app.llm.llm_serve import get_langchain_client
+from app.llm.llm_serve import get_langchain_client_fast
+from app.llm.token_tracker import tracker
 from langchain_core.messages import HumanMessage, SystemMessage
 
 load_dotenv()
@@ -8,7 +9,7 @@ load_dotenv()
 
 def evaluate_headlines(trigger_condition: str, headlines: list[dict]) -> dict:
     """
-    Uses the LLM to evaluate whether any of the scraped headlines
+    Uses the fast LLM to evaluate whether any scraped headlines
     match the user's trigger condition.
 
     Returns a dict: {"triggered": bool, "article_title": str, "summary": str}
@@ -16,27 +17,25 @@ def evaluate_headlines(trigger_condition: str, headlines: list[dict]) -> dict:
     if not headlines:
         return {"triggered": False, "article_title": "", "summary": "No headlines to evaluate."}
 
-    client = get_langchain_client(temperature=0.0)
+    # Use the fast 8b model — this is a simple classification task
+    client = get_langchain_client_fast()
 
     headline_block = "\n".join(
-        [f"- {h['title']}" for h in headlines[:20]]  # Cap at 20 headlines
+        [f"- {h['title']}" for h in headlines[:15]]  # Cap at 15 headlines
     )
 
     system_prompt = (
-        "You are a news alert evaluator. Your job is to determine whether any of the "
-        "given news headlines match a user's alert trigger condition.\n"
-        "You MUST respond with STRICTLY valid JSON. No markdown, no explanations.\n"
-        "Format: {\"triggered\": true/false, \"article_title\": \"...\", \"summary\": \"...\"}\n"
-        "If triggered is false, set article_title to \"\" and summary to \"No matching headlines found.\""
+        "You are a news alert evaluator. Determine if any headlines match the trigger condition.\n"
+        "Respond with STRICTLY valid JSON: {\"triggered\": true/false, \"article_title\": \"...\", \"summary\": \"...\"}\n"
+        "If not triggered: article_title=\"\", summary=\"No matching headlines found.\""
     )
 
-    user_prompt = f"""Alert Trigger Condition: "{trigger_condition}"
+    user_prompt = f"""Trigger: "{trigger_condition}"
 
-Recent Headlines:
+Headlines:
 {headline_block}
 
-Evaluate: Does any headline match or closely relate to the trigger condition?
-Respond with strictly valid JSON."""
+Does any headline match? Respond with strictly valid JSON."""
 
     response = client.invoke([
         SystemMessage(content=system_prompt),
@@ -44,6 +43,9 @@ Respond with strictly valid JSON."""
     ])
 
     raw = response.content.strip()
+
+    # Track token usage
+    tracker.log_usage("evaluator", system_prompt + user_prompt, raw)
 
     try:
         return json.loads(raw)

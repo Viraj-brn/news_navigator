@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News Navigator</title>
+    <title>F.A.I.T — Finance, AI & Tech Intelligence</title>
+    <meta name="description" content="AI-powered intelligence briefing engine that synthesizes real-time Finance, AI, and Technology news into structured analytical reports using RAG and LangGraph.">
+    <meta property="og:title" content="F.A.I.T — Finance, AI & Tech Intelligence">
+    <meta property="og:description" content="AI-powered intelligence briefing engine for Finance, AI, and Technology news.">
+    <meta property="og:type" content="website">
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,32 +22,46 @@
     <!-- Background decorative elements -->
     <div class="bg-shape shape-1"></div>
     <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
             <div class="logo">
-                <i class="fa-solid fa-compass"></i>
-                <span>News <strong>Navigator</strong></span>
+                <div class="logo-icon">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-name">F.A.I.T</span>
+                    <span class="logo-fullform">Finance, AI &amp; Tech</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
             </div>
         </header>
 
         <!-- Main Content area -->
         <main class="main-content">
-            
+
             <!-- Search / Navigator Section -->
             <section class="search-section" id="search-section">
                 <div class="search-header">
-                    <h1>Explore the World's News</h1>
-                    <p>Enter any topic to get an AI-synthesized, structured intelligence briefing.</p>
+                    <h1>Watch the Fate of Markets, AI &amp; Tech</h1>
+                    <p>Enter any topic to get an AI-synthesized intelligence briefing from global finance, tech, and AI sources.</p>
                 </div>
 
                 <div class="search-box">
                     <div class="search-input-group">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="topic-input" placeholder="e.g., Global AI Regulations, IPL 2026, Fed Interest Rates" autocomplete="off" />
+                        <input type="text" id="topic-input" placeholder="e.g., Fed Interest Rates, OpenAI GPT-5, NVIDIA Earnings" autocomplete="off" />
                     </div>
-                    
+
                     <div class="depth-selector">
                         <span class="depth-label">Depth:</span>
                         <div class="depth-options">
@@ -58,18 +76,18 @@
                         <i class="fa-solid fa-arrow-right"></i>
                     </button>
                 </div>
-                
+
                 <div class="loading-state" id="loading-state" style="display: none;">
                     <div class="spinner"></div>
                     <p>Synthesizing intel across latest articles...</p>
                 </div>
 
-                <!-- News Sentinel Widget -->
+                <!-- F.A.I.T Sentinel Widget -->
                 <div class="sentinel-widget glass-panel" id="sentinel-widget">
                     <div class="sentinel-header" id="sentinel-toggle">
                         <div class="sentinel-title">
                             <i class="fa-solid fa-satellite-dish"></i>
-                            <h3>News Sentinel</h3>
+                            <h3>F.A.I.T Sentinel</h3>
                         </div>
                         <p>Track events &mdash; get alerted when they happen.</p>
                         <i class="fa-solid fa-chevron-down sentinel-chevron" id="sentinel-chevron"></i>
@@ -80,11 +98,11 @@
                             <div class="sentinel-input-row">
                                 <div class="sentinel-field">
                                     <label for="alert-keyword">Keyword</label>
-                                    <input type="text" id="alert-keyword" placeholder="e.g., RBI, Tesla, IPL" />
+                                    <input type="text" id="alert-keyword" placeholder="e.g., NVIDIA, OpenAI, Fed" />
                                 </div>
                                 <div class="sentinel-field sentinel-field-wide">
                                     <label for="alert-condition">Trigger Condition</label>
-                                    <input type="text" id="alert-condition" placeholder="e.g., RBI cuts interest rates below 6%" />
+                                    <input type="text" id="alert-condition" placeholder="e.g., Fed cuts rates below 4.5%" />
                                 </div>
                             </div>
                             <button class="sentinel-add-btn" id="sentinel-add-btn">
@@ -102,7 +120,7 @@
             <!-- Results Dashboard (Hidden initially) -->
             <section class="dashboard-section" id="dashboard-section" style="display: none;">
                 <div class="dashboard-grid">
-                    
+
                     <!-- Left: Briefing Document -->
                     <div class="briefing-container glass-panel">
                         <div class="briefing-header">
@@ -137,14 +155,14 @@
                     <!-- Right: AI Chat / Q&A -->
                     <div class="chat-container glass-panel">
                         <div class="chat-header">
-                            <h3><i class="fa-solid fa-robot"></i> Follow-up Assistant</h3>
+                            <h3><i class="fa-solid fa-robot"></i> Intelligence Assistant</h3>
                             <p>Ask anything about this briefing.</p>
                         </div>
-                        
+
                         <div class="chat-history" id="chat-history">
                             <!-- Filled by JS -->
                             <div class="chat-msg ai-msg">
-                                Hello! I generated this briefing. What would you like to know more about?
+                                Briefing ready. Ask me anything about the analysis, data, or sources.
                             </div>
                         </div>
 
@@ -153,15 +171,27 @@
                             <button id="chat-send-btn"><i class="fa-solid fa-paper-plane"></i></button>
                         </div>
                     </div>
-                    
+
                 </div>
-                
+
                 <div class="action-bar">
                     <button class="back-btn" id="back-to-search"><i class="fa-solid fa-arrow-left"></i> New Search</button>
                 </div>
             </section>
 
         </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="footer-stack">
+                <span class="stack-badge"><i class="fa-brands fa-python"></i> FastAPI</span>
+                <span class="stack-badge"><i class="fa-solid fa-brain"></i> LangGraph</span>
+                <span class="stack-badge"><i class="fa-solid fa-bolt"></i> Groq</span>
+                <span class="stack-badge"><i class="fa-solid fa-database"></i> Supabase pgvector</span>
+                <span class="stack-badge"><i class="fa-solid fa-cube"></i> RAG Pipeline</span>
+            </div>
+            <p class="footer-credit">F.A.I.T &mdash; Finance, AI &amp; Tech Intelligence Engine</p>
+        </footer>
     </div>
 
     <script src="/static/app.js"></script>

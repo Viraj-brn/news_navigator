@@ -12,9 +12,24 @@ def get_client():
 
     return Groq(api_key=api_key)
 
+
 def get_langchain_client(model_name="llama-3.3-70b-versatile", temperature=0.2):
+    """Primary LLM client — uses the powerful 70b model for high-quality synthesis."""
     from langchain_groq import ChatGroq
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY not set")
     return ChatGroq(groq_api_key=api_key, model_name=model_name, temperature=temperature)
+
+
+def get_langchain_client_fast(temperature=0.1):
+    """Fast, token-efficient LLM client — uses the 8b model for simple tasks like alert evaluation."""
+    from langchain_groq import ChatGroq
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not set")
+    return ChatGroq(
+        groq_api_key=api_key,
+        model_name="llama-3.1-8b-instant",
+        temperature=temperature,
+    )

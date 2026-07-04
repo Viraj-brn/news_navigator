@@ -6,13 +6,13 @@ from app.llm.evaluator import evaluate_headlines
 
 def _run_sentinel_check():
     """
-    The core sentinel job:
+    The core F.A.I.T sentinel job:
     1. Fetch all active alerts from Supabase.
-    2. For each alert, scrape headlines using the existing RSS pipeline.
+    2. For each alert, scrape headlines using the RSS pipeline.
     3. Pass headlines to the LLM evaluator.
-    4. Print an alert to the terminal if triggered.
+    4. Log an alert if triggered.
     """
-    print("\n[Sentinel] Running scheduled alert check...")
+    print("\n[F.A.I.T Sentinel] Running scheduled alert check...")
     results_summary = []
 
     # 1. Fetch active alerts
@@ -20,14 +20,14 @@ def _run_sentinel_check():
         result = supabase.table("user_alerts").select("*").eq("is_active", True).execute()
         alerts = result.data
     except Exception as e:
-        print(f"[Sentinel] Failed to fetch alerts: {e}")
+        print(f"[F.A.I.T Sentinel] Failed to fetch alerts: {e}")
         return {"status": "error", "message": str(e)}
 
     if not alerts:
-        print("[Sentinel] No active alerts found. Skipping.")
+        print("[F.A.I.T Sentinel] No active alerts found. Skipping.")
         return {"status": "skipped", "message": "No active alerts"}
 
-    print(f"[Sentinel] Found {len(alerts)} active alert(s). Evaluating...")
+    print(f"[F.A.I.T Sentinel] Found {len(alerts)} active alert(s). Evaluating...")
 
     # 2. Process each alert
     for alert in alerts:
@@ -49,11 +49,11 @@ def _run_sentinel_check():
             else:
                 articles = asyncio.run(fetch_articles_for_topic(keyword))
         except Exception as e:
-            print(f"[Sentinel] Error fetching articles for '{keyword}': {e}")
+            print(f"[F.A.I.T Sentinel] Error fetching articles for '{keyword}': {e}")
             continue
 
         if not articles:
-            print(f"[Sentinel] No articles found for keyword '{keyword}'. Skipping.")
+            print(f"[F.A.I.T Sentinel] No articles found for keyword '{keyword}'. Skipping.")
             continue
 
         # 3. Evaluate with LLM
@@ -77,7 +77,7 @@ def _run_sentinel_check():
                 "keyword": keyword,
                 "triggered": False
             })
-            print(f"[Sentinel] No match for alert '{keyword}'.")
+            print(f"[F.A.I.T Sentinel] No match for alert '{keyword}'.")
 
-    print("[Sentinel] Check complete.\n")
+    print("[F.A.I.T Sentinel] Check complete.\n")
     return {"status": "success", "results": results_summary}

@@ -1,13 +1,16 @@
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from app.core.fetch_articles import fetch_articles_for_topic
 from app.llm.synthesize import synthesize_briefing
 from app.llm.ask_briefing import ask_briefing
+from app.llm.token_tracker import tracker
 from app.rag.document_processor import process_articles_into_chunks
 from app.rag.vector_store import create_knowledge_base
 from app.core.scheduler import _run_sentinel_check
@@ -19,7 +22,32 @@ load_dotenv()
 if not os.getenv("GROQ_API_KEY"):
     raise RuntimeError("GROQ_API_KEY not found in environment variables")
 
-app = FastAPI()
+_start_time = time.time()
+
+app = FastAPI(
+    title="F.A.I.T — Finance, AI & Tech Intelligence",
+    description="AI-powered intelligence briefing engine for Finance, AI, and Technology news.",
+    version="2.0.0",
+)
+
+# ── CORS Middleware ─────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── Request Timing Middleware ───────────────────────────
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    process_time = round(time.time() - start, 3)
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
 
 
 # ── Request models ──────────────────────────────────────
@@ -27,7 +55,7 @@ app = FastAPI()
 class NavigatorRequest(BaseModel):
     topic: str
     depth: str = "standard"
-    
+
     # Add a Pydantic validator to automatically strip spaces
     @classmethod
     def validate_topic(cls, v):
@@ -38,7 +66,7 @@ class AskRequest(BaseModel):
     topic: str
     conversation_history: list[dict] = []
     question: str
-    
+
     @classmethod
     def validate_topic_and_q(cls, v):
         return v.strip() if isinstance(v, str) else v
@@ -48,12 +76,12 @@ class AlertRequest(BaseModel):
     trigger_condition: str
 
 
-# ── Routes ──────────────────────────────────────────────
+# ── Core Routes ─────────────────────────────────────────
 
 @app.post("/api/navigator")
 async def generate_briefing(req: NavigatorRequest):
     articles = await fetch_articles_for_topic(req.topic)
-    
+
     if not articles:
         raise HTTPException(status_code=404, detail="No articles found for this topic")
 
@@ -65,27 +93,21 @@ async def generate_briefing(req: NavigatorRequest):
     return {"briefing": briefing, "articles": articles, "topic": req.topic}
 
 
-@app.get("/api/keepalive")
-def keepalive():
-    """Endpoint to keep free hosting tiers awake so APScheduler runs."""
-    return {"status": "awake"}
-
-
 @app.post("/api/ask")
 def ask_question(req: AskRequest):
     """Answer a follow-up question using RAG context."""
-    
+
     answer = ask_briefing(
         briefing=req.briefing,
         topic=req.topic,
         conversation_history=req.conversation_history,
         new_question=req.question,
     )
-    
+
     return {"answer": answer}
 
 
-# ── Alerts (News Sentinel) ───────────────────────────────
+# ── Alerts (F.A.I.T Sentinel) ───────────────────────────
 
 @app.post("/api/alerts/create")
 def create_alert(req: AlertRequest):
@@ -96,7 +118,7 @@ def create_alert(req: AlertRequest):
             "trigger_condition": req.trigger_condition.strip(),
             "is_active": True,
         }).execute()
-        
+
         return {"status": "ok", "alert": result.data[0]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create alert: {str(e)}")
@@ -121,6 +143,7 @@ def delete_alert(alert_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete alert: {str(e)}")
 
+
 @app.post("/api/sentinel/run")
 def trigger_sentinel():
     """Endpoint for cron-job.org to trigger the daily news alert check."""
@@ -129,6 +152,42 @@ def trigger_sentinel():
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sentinel run failed: {str(e)}")
+
+
+# ── System Endpoints ────────────────────────────────────
+
+@app.get("/api/health")
+def health_check():
+    """System health endpoint with metadata — useful for monitoring and interviews."""
+    uptime_seconds = round(time.time() - _start_time)
+    hours, remainder = divmod(uptime_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    from app.core.feeds import FEED_REGISTRY
+    return {
+        "status": "healthy",
+        "app": "F.A.I.T — Finance, AI & Tech Intelligence",
+        "version": "2.0.0",
+        "uptime": f"{hours}h {minutes}m {seconds}s",
+        "feeds_registered": len(FEED_REGISTRY),
+        "models": {
+            "primary": "llama-3.3-70b-versatile",
+            "fast": "llama-3.1-8b-instant",
+            "embeddings": "all-MiniLM-L6-v2",
+        },
+    }
+
+
+@app.get("/api/stats")
+def token_stats():
+    """Token usage statistics — demonstrates cost-consciousness in architecture."""
+    return tracker.get_stats()
+
+
+@app.get("/api/keepalive")
+def keepalive():
+    """Endpoint to keep free hosting tiers awake so scheduled jobs run."""
+    return {"status": "awake"}
 
 
 # ── Serve the frontend ───────────────────────────────────
