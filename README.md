@@ -3,7 +3,8 @@
 ![Status](https://img.shields.io/badge/Status-Live-10b981) ![Python](https://img.shields.io/badge/Python-3.10+-3776ab) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) ![Supabase](https://img.shields.io/badge/Supabase-pgvector-3ECF8E?logo=supabase&logoColor=white) ![Groq](https://img.shields.io/badge/Groq-Llama%203.3-f472b6) ![LangGraph](https://img.shields.io/badge/LangGraph-Agent%20Orchestration-6366f1)
 
 > **Watch the Fate of Markets, AI & Tech** — An AI-powered intelligence briefing engine that synthesizes real-time news from 30+ global sources into structured analytical reports.
-
+> 
+> 🔴 **Live Demo:** [https://news-navigator-hro3.onrender.com/](https://news-navigator-hro3.onrender.com/)
 ## ✨ Why This Project
 
 This project demonstrates production-grade AI engineering patterns that are immediately relevant to roles in **Quant, FinTech, and Data Science**:
