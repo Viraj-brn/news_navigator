@@ -61,7 +61,7 @@ def retrieve_relevant_context(topic: str, query: str, top_k: int = 4) -> str:
             "match_count": top_k,
         }).execute()
     except Exception as e:
-        print(f"⚠️ Supabase RPC error: {e}")
+        print(f"[Warning] Supabase RPC error: {e}")
         return "No knowledge base found for this topic."
 
     # 3. Format the results for the LLM

@@ -24,7 +24,7 @@ async def fetch_single_feed(client: httpx.AsyncClient, url: str, feed_name: str)
         return articles
 
     except Exception as e:
-        print(f"⚠️ Failed to fetch feed '{feed_name}': {e}")
+        print(f"[Warning] Failed to fetch feed '{feed_name}': {e}")
         return []
 
 
@@ -54,7 +54,7 @@ async def fetch_articles_for_topic(topic: str) -> list[dict]:
         # 3. FALLBACK: If targeted feeds returned nothing, scan top general feeds
         if not all_articles:
             print(
-                f"⚠️ No targeted articles found for '{topic}'. Falling back to general feeds.")
+                f"[Warning] No targeted articles found for '{topic}'. Falling back to general feeds.")
             fallback_keys = [
                 "reuters_business", "techcrunch", "ai_news",
                 "cnbc_finance", "bbc_business", "coindesk",
