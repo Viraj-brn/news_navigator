@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 
 from app.core.fetch_articles import fetch_articles_for_topic
@@ -30,13 +30,13 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# ── CORS Middleware ─────────────────────────────────────
+# ── CORS (Cross-Origin Resource Sharing) Middleware ─────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"], # Allow requests from any website
+    allow_credentials=True, # Allow cookies and authentication headers
+    allow_methods=["*"], # Allow all HTTP methods (GET, POST, DELETE, etc)
+    allow_headers=["*"], # Allow all custom HTTP headers
 )
 
 
@@ -57,6 +57,7 @@ class NavigatorRequest(BaseModel):
     depth: str = "standard"
 
     # Add a Pydantic validator to automatically strip spaces
+    @field_validator('topic')
     @classmethod
     def validate_topic(cls, v):
         return v.strip() if isinstance(v, str) else v
@@ -67,6 +68,7 @@ class AskRequest(BaseModel):
     conversation_history: list[dict] = []
     question: str
 
+    @field_validator('topic', 'question')
     @classmethod
     def validate_topic_and_q(cls, v):
         return v.strip() if isinstance(v, str) else v
